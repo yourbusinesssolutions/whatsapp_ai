@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const triggerPatterns = require('../config/triggers.config');
+const triggerPatterns = require('../../config/triggers.config');
 
 class ConversationManager {
     constructor(options = {}) {

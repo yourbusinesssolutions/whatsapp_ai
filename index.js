@@ -25,6 +25,8 @@ try {
     AIEnabledSender = require('./src/ai/AIEnabledSender');
 } catch (error) {
     console.log('AI responder not found, running without AI features');
+    console.error('Detailed Error:', error.message);
+    console.error('Error Stack:', error.stack);
 }
 
 // Utilities
