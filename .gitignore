@@ -133,3 +133,7 @@ Thumbs.db
 
 # Debug files
 *.debug
+
+
+.wwebjs_cache/
+.wwebjs_auth/

@@ -1,7 +1,12 @@
 /**
+ * Message Scheduler for Een Vakman Nodig WhatsApp Marketing System
  * Handles distribution of messages across multiple WhatsApp sessions
  * with optimized timing and load balancing
  */
+
+const appConfig = require('../../config/app.config');
+const delayUtils = require('../utils/delayUtils');
+
 class MessageScheduler {
     /**
      * Create a new message scheduler
@@ -14,10 +19,10 @@ class MessageScheduler {
         this.messageTemplates = messageTemplates;
         this.options = {
             // Maximum messages to send per hour across all sessions
-            maxMessagesPerHour: options.maxMessagesPerHour || 100,
+            maxMessagesPerHour: options.maxMessagesPerHour || appConfig.messaging.maxMessagesPerHour || 60,
             
             // Distribution patterns affect how messages are spaced out
-            distributionPattern: options.distributionPattern || 'random', // 'even', 'random', 'burst'
+            distributionPattern: options.distributionPattern || appConfig.messaging.distributionPattern || 'random',
             
             // Whether to randomly assign categories to sessions or use round-robin
             randomAssignment: options.randomAssignment !== false,
@@ -29,10 +34,14 @@ class MessageScheduler {
             resumeFromPending: options.resumeFromPending !== false
         };
         
+        // Stats tracking
         this.stats = {
             totalQueued: 0,
             queuedByCategory: {},
-            queuedBySession: {}
+            queuedBySession: {},
+            startTime: new Date(),
+            lastScheduled: null,
+            schedulingActive: false
         };
         
         // Initialize session stats
@@ -42,28 +51,9 @@ class MessageScheduler {
             }
         });
         
-        // Check for pending numbers to resume from
-        if (this.options.resumeFromPending) {
-            this.resumePendingNumbers();
-        }
-    }
-
-    /**
-     * Resume pending numbers from previous run
-     */
-    resumePendingNumbers() {
-        // Get the first sender with a processedTracker
-        if (this.senders.length === 0) return;
-        
-        const firstSender = this.senders[0];
-        if (!firstSender.processedTracker) return;
-        
-        const pendingNumbers = firstSender.processedTracker.getAllPending();
-        
-        if (pendingNumbers.length > 0) {
-            console.log(`Found ${pendingNumbers.length} pending numbers from previous run. Resuming...`);
-            this.scheduleMessages(pendingNumbers);
-        }
+        console.log(`MessageScheduler initialized with ${this.senders.length} senders`);
+        console.log(`Maximum rate: ${this.options.maxMessagesPerHour} messages per hour`);
+        console.log(`Distribution pattern: ${this.options.distributionPattern}`);
     }
 
     /**
@@ -74,27 +64,16 @@ class MessageScheduler {
         // Base delay for maximum hourly rate
         const baseDelay = (3600 * 1000) / this.options.maxMessagesPerHour;
         
-        switch (this.options.distributionPattern) {
-            case 'even':
-                // Consistent spacing
-                return baseDelay;
-                
-            case 'burst':
-                // Send in bursts with longer pauses
-                return Math.random() < 0.7 
-                    ? baseDelay * 0.5 
-                    : baseDelay * 2.5;
-                
-            case 'random':
-            default:
-                // Random variation around the base delay
-                return baseDelay * (0.5 + Math.random());
-        }
+        // Use delay utility with selected pattern
+        return delayUtils.distributionDelay(
+            this.options.distributionPattern,
+            baseDelay
+        );
     }
 
     /**
      * Select the best WhatsApp sender for a message
-     * @returns {WhatsAppSender} - Selected sender
+     * @returns {Object|null} - Selected sender or null if none available
      */
     selectSender() {
         // Filter to only enabled and ready senders
@@ -140,9 +119,11 @@ class MessageScheduler {
             return 0;
         }
         
+        this.stats.schedulingActive = true;
+        
         // Process contacts in batches to avoid memory issues with large datasets
         const batchSize = Math.min(this.options.batchSize, contacts.length);
-        console.log(`Scheduling messages for ${batchSize} contacts...`);
+        console.log(`Scheduling messages for ${batchSize} contacts out of ${contacts.length} total`);
         
         const scheduledBatch = contacts.slice(0, batchSize);
         let scheduledCount = 0;
@@ -167,7 +148,8 @@ class MessageScheduler {
                 // Update statistics
                 scheduledCount++;
                 this.stats.totalQueued++;
-                this.stats.queuedBySession[sender.sessionId]++;
+                this.stats.queuedBySession[sender.sessionId] = 
+                    (this.stats.queuedBySession[sender.sessionId] || 0) + 1;
                 
                 // Track by category
                 if (!this.stats.queuedByCategory[contact.category]) {
@@ -177,7 +159,21 @@ class MessageScheduler {
             }
         });
         
+        this.stats.lastScheduled = new Date();
+        this.stats.schedulingActive = false;
+        
         console.log(`Scheduled ${scheduledCount} messages across ${this.senders.length} sessions`);
+        
+        // Schedule remaining contacts with a delay if there are more
+        if (contacts.length > batchSize) {
+            const delay = this.calculateDelay() * batchSize;
+            console.log(`Scheduling next batch in ${Math.round(delay/1000)} seconds`);
+            
+            setTimeout(() => {
+                this.scheduleMessages(contacts.slice(batchSize));
+            }, delay);
+        }
+        
         return scheduledCount;
     }
 
@@ -186,7 +182,16 @@ class MessageScheduler {
      * @returns {Object} - Current stats
      */
     getStats() {
-        return this.stats;
+        // Calculate messages per hour
+        const uptime = (new Date() - this.stats.startTime) / 1000 / 3600; // hours
+        const messagesPerHour = uptime > 0 ? Math.round(this.stats.totalQueued / uptime) : 0;
+        
+        return {
+            ...this.stats,
+            uptime: uptime.toFixed(2) + ' hours',
+            messagesPerHour,
+            isActive: this.stats.schedulingActive
+        };
     }
 }
 

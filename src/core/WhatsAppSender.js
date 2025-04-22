@@ -1,16 +1,22 @@
+/**
+ * WhatsApp Sender for Een Vakman Nodig WhatsApp Marketing System
+ * Handles WhatsApp session management and message sending
+ */
+
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
+const delayUtils = require('../utils/delayUtils');
+const phoneUtils = require('../utils/phoneUtils');
+const Logger = require('../utils/logger');
+const appConfig = require('../../config/app.config');
 
-/**
- * Handles WhatsApp session management and message sending
- */
 class WhatsAppSender {
     /**
      * Create a new WhatsApp sender instance
      * @param {Object} sessionConfig - Session configuration
-     * @param {ProcessedTracker} processedTracker - Shared tracker for processed numbers
+     * @param {Object} processedTracker - Shared tracker for processed numbers
      * @param {Object} options - Additional options
      */
     constructor(sessionConfig, processedTracker, options = {}) {
@@ -28,16 +34,18 @@ class WhatsAppSender {
         this.options = {
             minDelay: options.minDelay || 30000, // Min delay between messages (30 seconds)
             maxDelay: options.maxDelay || 60000, // Max delay between messages (60 seconds)
-            logDirectory: options.logDirectory || path.join(__dirname, 'logs'),
-            sendImmediately: options.sendImmediately !== false // Send first message immediately
+            logDirectory: options.logDirectory || appConfig.directories.logDirectory,
+            sendImmediately: options.sendOnStartup !== false, // Send first message immediately
+            debug: options.debug || false
         };
         
-        // Ensure log directory exists
-        if (!fs.existsSync(this.options.logDirectory)) {
-            fs.mkdirSync(this.options.logDirectory, { recursive: true });
-        }
-        
-        this.logFile = path.join(this.options.logDirectory, `${this.sessionId}.log`);
+        // Initialize logger
+        this.logger = new Logger({
+            component: 'whatsapp-sender',
+            sessionId: this.sessionId,
+            logDirectory: this.options.logDirectory,
+            logLevel: this.options.debug ? 'debug' : 'info'
+        });
         
         // Queue for pending messages
         this.messageQueue = [];
@@ -46,37 +54,7 @@ class WhatsAppSender {
         this.failedCount = 0;
         this.startTime = null;
         
-        // Initialize log file
-        this.initLogFile();
-    }
-
-    /**
-     * Initialize log file
-     */
-    initLogFile() {
-        const timestamp = new Date().toISOString();
-        fs.appendFileSync(
-            this.logFile, 
-            `\n\n--- ${this.sessionName} (${this.deviceInfo}) started at ${timestamp} ---\n\n`,
-            'utf-8'
-        );
-    }
-
-    /**
-     * Log a message to file
-     * @param {string} message - Message to log
-     */
-    log(message) {
-        const timestamp = new Date().toISOString();
-        const logEntry = `[${timestamp}] [${this.sessionName}] ${message}\n`;
-        
-        console.log(logEntry.trim());
-        
-        try {
-            fs.appendFileSync(this.logFile, logEntry, 'utf-8');
-        } catch (error) {
-            console.error(`Error writing to log file: ${error.message}`);
-        }
+        this.logger.info(`WhatsApp Sender initialized for ${this.sessionName} (${this.deviceInfo})`);
     }
 
     /**
@@ -84,87 +62,96 @@ class WhatsAppSender {
      */
     initialize() {
         if (!this.isEnabled) {
-            this.log('Session is disabled in configuration. Skipping initialization.');
+            this.logger.warn('Session is disabled in configuration. Skipping initialization.');
             return;
         }
         
-        this.log(`Initializing WhatsApp client for ${this.sessionName} (${this.deviceInfo})...`);
+        this.logger.info(`Initializing WhatsApp client...`);
         this.startTime = new Date();
         
         this.client = new Client({
             authStrategy: new LocalAuth({ clientId: this.sessionId }),
             puppeteer: {
-                headless: false,
+                headless: process.env.WHATSAPP_HEADLESS === 'true',
+                executablePath: process.platform === 'darwin' ? 
+                    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined,
                 args: [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
                     '--disable-gpu',
                     '--disable-dev-shm-usage'
                 ],
+                timeout: 60000 // Increased timeout to 60 seconds
             }
         });
 
         // Set up event handlers
         this.client.on('qr', (qr) => {
             if (!this.qrShown) {
-                this.log(`QR code received for ${this.sessionName} (${this.deviceInfo}). Scan with WhatsApp to authenticate:`);
+                this.logger.info(`QR code received. Scan with WhatsApp to authenticate:`);
                 qrcode.generate(qr, { small: true });
                 this.qrShown = true;
             } else {
-                this.log('New QR code received, but not displayed to avoid clutter');
+                this.logger.debug('New QR code received, but not displayed to avoid clutter');
             }
         });
 
         this.client.on('ready', async () => {
             this.isReady = true;
             this.qrShown = false; // Reset for potential reconnection
-            this.log(`${this.sessionName} (${this.deviceInfo}) is ready and connected!`);
+            this.logger.info(`WhatsApp client is ready and connected!`);
             
             // Get client info
             try {
                 const info = await this.client.getState();
-                this.log(`Connection state: ${info}`);
-                
-                // Get info about the connected account - using info object instead of getWid
-                // which may not be available in some versions of whatsapp-web.js
-                this.log(`Connected to WhatsApp`);
+                this.logger.info(`Connection state: ${info}`);
                 
                 // If we have messages waiting, send first one immediately
                 if (this.messageQueue.length > 0 && this.options.sendImmediately && !this.firstMessageSent) {
-                    this.log('Sending first message immediately...');
+                    this.logger.info('Sending first message immediately...');
                     this.sendFirstMessageImmediately();
                 } else if (this.messageQueue.length > 0) {
-                    this.log('Starting message processor...');
+                    this.logger.info('Starting message processor...');
                     this.processMessageQueue();
                 } else {
-                    this.log('No messages in queue. Ready to process when messages are added.');
+                    this.logger.info('No messages in queue. Ready to process when messages are added.');
                 }
             } catch (error) {
-                this.log(`Error getting client info: ${error.message}`);
+                this.logger.error(`Error getting client info:`, error);
             }
         });
 
         this.client.on('authenticated', () => {
-            this.log(`${this.sessionName} (${this.deviceInfo}) authenticated successfully`);
+            this.logger.info(`Authenticated successfully`);
         });
 
         this.client.on('auth_failure', (msg) => {
-            this.log(`Authentication failed: ${msg}`);
+            this.logger.error(`Authentication failed: ${msg}`);
             this.qrShown = false; // Reset to show QR code again
         });
 
         this.client.on('disconnected', (reason) => {
             this.isReady = false;
-            this.log(`${this.sessionName} (${this.deviceInfo}) disconnected: ${reason}`);
+            this.logger.warn(`Disconnected: ${reason}`);
         });
 
-        this.client.on('message', async (message) => {
-            // Log incoming replies
-            this.log(`Received message from ${message.from}: ${message.body}`);
-        });
+        // Set up message handler using the extensible method
+        this.setupBaseMessageHandler();
 
         // Initialize the client
         this.client.initialize();
+    }
+
+    /**
+     * Set up the base message handler - can be overridden by subclasses
+     */
+    setupBaseMessageHandler() {
+        this.client.on('message', async (message) => {
+            // Basic message handler for standard WhatsAppSender
+            this.logger.info(`Received message from ${message.from}: ${message.body}`);
+        });
+        
+        this.logger.debug('Base message handler set up');
     }
 
     /**
@@ -172,6 +159,7 @@ class WhatsAppSender {
      * @param {string} phoneNumber - Recipient phone number
      * @param {string} message - Message content
      * @param {string} category - Professional category (for logging)
+     * @returns {boolean} - True if message was queued successfully
      */
     queueMessage(phoneNumber, message, category) {
         if (!this.isEnabled) {
@@ -180,7 +168,7 @@ class WhatsAppSender {
         
         // Check if number has already been processed
         if (this.processedTracker.isProcessed(phoneNumber)) {
-            this.log(`Skipping ${phoneNumber} (${category}) - already processed`);
+            this.logger.debug(`Skipping ${phoneNumber} (${category}) - already processed`);
             return false;
         }
         
@@ -194,7 +182,7 @@ class WhatsAppSender {
             timestamp: new Date()
         });
         
-        this.log(`Queued message to ${phoneNumber} (${category}). Queue size: ${this.messageQueue.length}`);
+        this.logger.info(`Queued message to ${phoneNumber} (${category}). Queue size: ${this.messageQueue.length}`);
         
         // Start processing if not already running and the session is ready
         if (this.isReady && !this.isSending && !this.firstMessageSent && this.options.sendImmediately) {
@@ -224,7 +212,7 @@ class WhatsAppSender {
             
             // Double-check number hasn't been processed by another session
             if (this.processedTracker.isProcessed(phoneNumber)) {
-                this.log(`Skipping ${phoneNumber} (${category}) - processed by another session`);
+                this.logger.debug(`Skipping ${phoneNumber} (${category}) - processed by another session`);
                 this.isSending = false;
                 
                 // Try to send another first message
@@ -234,24 +222,20 @@ class WhatsAppSender {
                 return;
             }
             
-            // Format number for WhatsApp (ensure it has country code)
-            let formattedNumber = phoneNumber;
-            if (!formattedNumber.includes('@c.us')) {
-                // Remove any '+' prefix and add WhatsApp suffix
-                formattedNumber = formattedNumber.replace(/^\+/, '') + '@c.us';
-            }
+            // Format number for WhatsApp
+            const formattedNumber = phoneUtils.formatPhoneNumberForWhatsApp(phoneNumber);
             
-            this.log(`IMMEDIATE: Sending first message to ${phoneNumber} (${category})`);
+            this.logger.info(`IMMEDIATE: Sending first message to ${phoneNumber} (${category})`);
             
             // Send the message
             let success = false;
             try {
                 await this.client.sendMessage(formattedNumber, message);
-                this.log(`✓ IMMEDIATE: First message sent successfully to ${phoneNumber} (${category})`);
+                this.logger.info(`✓ IMMEDIATE: First message sent successfully to ${phoneNumber} (${category})`);
                 success = true;
                 this.sentCount++;
             } catch (error) {
-                this.log(`✗ IMMEDIATE: Failed to send first message to ${phoneNumber}: ${error.message}`);
+                this.logger.error(`✗ IMMEDIATE: Failed to send first message to ${phoneNumber}:`, error);
                 this.failedCount++;
             }
             
@@ -265,7 +249,7 @@ class WhatsAppSender {
             
             // Wait 3600 seconds (1 hour) before starting regular queue processing
             const hourDelay = 3600 * 1000;
-            this.log(`First message sent immediately. Waiting 1 hour before sending next message...`);
+            this.logger.info(`First message sent immediately. Waiting 1 hour before sending next message...`);
             
             setTimeout(() => {
                 this.isSending = false;
@@ -273,7 +257,7 @@ class WhatsAppSender {
             }, hourDelay);
             
         } catch (error) {
-            this.log(`Error sending immediate message: ${error.message}`);
+            this.logger.error(`Error sending immediate message:`, error);
             this.isSending = false;
         }
     }
@@ -295,30 +279,26 @@ class WhatsAppSender {
             
             // Double-check number hasn't been processed by another session
             if (this.processedTracker.isProcessed(phoneNumber)) {
-                this.log(`Skipping ${phoneNumber} (${category}) - processed by another session`);
+                this.logger.debug(`Skipping ${phoneNumber} (${category}) - processed by another session`);
                 this.isSending = false;
                 this.processMessageQueue();
                 return;
             }
             
-            // Format number for WhatsApp (ensure it has country code)
-            let formattedNumber = phoneNumber;
-            if (!formattedNumber.includes('@c.us')) {
-                // Remove any '+' prefix and add WhatsApp suffix
-                formattedNumber = formattedNumber.replace(/^\+/, '') + '@c.us';
-            }
+            // Format number for WhatsApp
+            const formattedNumber = phoneUtils.formatPhoneNumberForWhatsApp(phoneNumber);
             
-            this.log(`Sending message to ${phoneNumber} (${category})`);
+            this.logger.info(`Sending message to ${phoneNumber} (${category})`);
             
             // Send the message
             let success = false;
             try {
                 await this.client.sendMessage(formattedNumber, message);
-                this.log(`✓ Message sent successfully to ${phoneNumber} (${category})`);
+                this.logger.info(`✓ Message sent successfully to ${phoneNumber} (${category})`);
                 success = true;
                 this.sentCount++;
             } catch (error) {
-                this.log(`✗ Failed to send message to ${phoneNumber}: ${error.message}`);
+                this.logger.error(`✗ Failed to send message to ${phoneNumber}:`, error);
                 this.failedCount++;
             }
             
@@ -331,12 +311,9 @@ class WhatsAppSender {
             );
             
             // Random delay before next message
-            const delay = Math.floor(
-                Math.random() * (this.options.maxDelay - this.options.minDelay) + 
-                this.options.minDelay
-            );
+            const delay = delayUtils.randomDelay(this.options.minDelay, this.options.maxDelay);
             
-            this.log(`Waiting ${Math.round(delay/1000)} seconds before next message...`);
+            this.logger.info(`Waiting ${Math.round(delay/1000)} seconds before next message...`);
             
             setTimeout(() => {
                 this.isSending = false;
@@ -344,7 +321,7 @@ class WhatsAppSender {
             }, delay);
             
         } catch (error) {
-            this.log(`Error processing message queue: ${error.message}`);
+            this.logger.error(`Error processing message queue:`, error);
             this.isSending = false;
         }
     }
