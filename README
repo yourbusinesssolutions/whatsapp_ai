@@ -1,0 +1,157 @@
+# WhatsApp Multi-Session Marketing System
+
+This system enables you to send targeted WhatsApp messages to contacts from CSV files based on their professional category using multiple WhatsApp sessions simultaneously.
+
+## Features
+
+- **Multiple Session Support**: Run up to 5 separate WhatsApp sessions simultaneously
+- **Dynamic Session Configuration**: Configure sessions via config.json
+- **Targeted Messaging**: Automatically matches message templates to professional categories
+- **Duplication Prevention**: Prevents duplicate messages across all sessions
+- **Message Distribution**: Distributes messaging load with customizable timing
+- **Comprehensive Logging**: Detailed logs of all sent messages with timestamps, recipients, and results
+- **Session Persistence**: Continues from where it left off if interrupted
+- **Phone Number Formatting**: Automatically formats phone numbers for WhatsApp compatibility
+
+## Installation
+
+1. Make sure you have Node.js installed (version 14 or higher recommended)
+
+2. Clone or download this project to your local machine
+
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+## Project Structure
+
+- `index.js` - Main application file
+- `messages.js` - Contains message templates for each category
+- `csvProcessor.js` - Handles reading and processing CSV files
+- `processedTracker.js` - Tracks which numbers have been processed and pending
+- `whatsappSender.js` - Manages WhatsApp sessions and sending messages
+- `messageScheduler.js` - Distributes messages across sessions
+- `config.json` - Configuration file for system settings and sessions
+
+## Configuration
+
+The system is configured through the `config.json` file:
+
+```json
+{
+  "csvDirectory": "data",
+  "logDirectory": "logs",
+  "processedNumbersFile": "processed_numbers.json",
+  "pendingNumbersFile": "pending_numbers.json",
+  "maxMessagesPerHour": 60,
+  "minDelay": 60,
+  "maxDelay": 180,
+  "distributionPattern": "random",
+  "sessions": [
+    {
+      "id": "samsung_soulaiman",
+      "name": "Samsung Soulaiman",
+      "enabled": true,
+      "deviceInfo": "Samsung Galaxy"
+    },
+    {
+      "id": "hamza_iphone",
+      "name": "Hamza iPhone",
+      "enabled": true,
+      "deviceInfo": "iPhone"
+    },
+    {
+      "id": "session_3",
+      "name": "Session 3",
+      "enabled": false,
+      "deviceInfo": "Optional device"
+    }
+  ]
+}
+```
+
+### Configuration Options:
+
+- **csvDirectory**: Directory containing CSV files with phone numbers
+- **logDirectory**: Directory for log files
+- **processedNumbersFile**: File to store processed numbers
+- **pendingNumbersFile**: File to store pending numbers
+- **maxMessagesPerHour**: Maximum messages to send per hour across all sessions
+- **minDelay/maxDelay**: Min/max delay between messages in seconds
+- **distributionPattern**: How to space messages (`random`, `even`, or `burst`)
+- **sessions**: Array of WhatsApp session configurations
+  - **id**: Unique session identifier
+  - **name**: Display name for the session
+  - **enabled**: Whether this session is active
+  - **deviceInfo**: Information about the device (for logging)
+
+## Preparing Your Data
+
+Place your CSV files in the `data` directory. Each CSV file should have at least these columns:
+- `phone_number`: The contact's phone number (with or without country code)
+- `category`: The professional category (dakdekker, schilder, stucadoor, klusjesman, etc.)
+
+Example CSV format:
+```
+phone_number,category,name
++31612345678,dakdekker,John
+0687654321,schilder,Emma
+```
+
+## Customizing Messages
+
+Edit the `messages.js` file to customize message templates for each professional category:
+
+```javascript
+module.exports = {
+    "dakdekker": "Hoi! We zoeken nog 5 dakdekkers voor Een Vakman Nodig...",
+    "schilder": "Ben jij schilder en wil je meer opdrachten? Bij Een Vakman Nodig...",
+    // Add more categories as needed
+    "default": "Hoi! Als vakman kun je je nu aansluiten bij Een Vakman Nodig..."
+};
+```
+
+## Running the System
+
+1. Start the application:
+   ```bash
+   node index.js
+   ```
+
+2. For each enabled WhatsApp session, you'll see a QR code in the terminal. Scan each one with your WhatsApp mobile app:
+   - Open WhatsApp on your phone
+   - Tap on Menu or Settings
+   - Select WhatsApp Web/Desktop
+   - Scan the QR code displayed in the terminal
+
+3. After authentication, the system will automatically:
+   - Process your CSV files
+   - Begin sending messages according to your configuration
+   - Display real-time statistics every 30 seconds
+
+4. Press Ctrl+C to stop the campaign when finished.
+
+## Monitoring
+
+The system provides detailed logs in the `logs` directory:
+- Individual logs for each session
+- A master message history log with all sent messages
+
+Real-time statistics are displayed every 30 seconds showing:
+- Total messages sent
+- Messages by category
+- Messages by session
+- System uptime
+- Queue status
+
+## Troubleshooting
+
+- **QR Code Issues**: If a session fails to connect, restart the application
+- **WhatsApp Connection Problems**: Make sure your internet connection is stable
+- **Rate Limiting**: If messages stop sending, you may have hit WhatsApp's rate limits. Lower the `maxMessagesPerHour` and try again
+- **Phone Number Format Issues**: The system attempts to normalize numbers, but if you encounter errors, ensure numbers in your CSV follow the +[country code][number] format
+
+---
+
+**Note**: This tool is designed for legitimate business communications. Always comply with WhatsApp's terms of service and obtain proper consent before messaging contacts.

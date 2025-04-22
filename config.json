@@ -1,0 +1,55 @@
+{
+    "csvDirectory": "data",
+    "logDirectory": "logs",
+    "processedNumbersFile": "processed_numbers.json",
+    "pendingNumbersFile": "pending_numbers.json",
+    "maxMessagesPerHour": 60,
+    "minDelay": 60,
+    "maxDelay": 180,
+    "distributionPattern": "random",
+    "sessions": [
+        {
+            "id": "hamza_iphone",
+            "name": "Hamza iPhone",
+            "enabled": true,
+            "deviceInfo": "iPhone"
+        }
+    ],
+    "aiSettings": {
+        "enabled": true,
+        "provider": "deepseek",
+        "apiKey": "YOUR_DEEPSEEK_API_KEY",
+        "apiUrl": "https://api.deepseek.ai/v1/chat/completions",
+        "model": "deepseek-coder",
+        "responseLanguage": "Dutch",
+        "maxResponseLength": 200,
+        "temperature": 0.3,
+        "responseDelay": {
+            "min": 2000,
+            "max": 4000
+        },
+        "businessLogic": {
+            "companyName": "Een Vakman Nodig B.V.",
+            "description": "platform voor vakmensen die direct opdrachten ontvangen van klanten in hun regio",
+            "costStructure": {
+                "monthlyFee": "€100 per maand",
+                "commission": "2% commissie per geslaagde klus",
+                "minimumCommission": "€50"
+            },
+            "signupLink": "https://eenvakmannodig.nl/aanmelden",
+            "marketingPoints": [
+                "Je maakt zelf offertes en bepaalt je eigen prijzen",
+                "Wij verkopen geen leads, je krijgt direct contact met klanten",
+                "We zijn geen advertentieplatform zoals Werkspot",
+                "Je betaalt alleen voor maandabonnement en commissie bij succes"
+            ],
+            "triggerKeywords": {
+                "interest": ["interesse", "aanmelden", "opgeven", "inschrijven", "registreren", "meer info", "klinkt goed", "ik wil"],
+                "costs": ["wat kost", "kost het", "prijs", "prijzen", "betalen", "tarief", "kosten"],
+                "rejection": ["geen interesse", "niet interessant", "nee bedankt", "liever niet", "stop", "afmelden"],
+                "trust": ["betrouwbaar", "echt", "oplichting", "scam", "werkt dit"],
+                "howItWorks": ["hoe werkt", "uitleg", "systeem", "werkwijze"]
+            }
+        }
+    }
+}
