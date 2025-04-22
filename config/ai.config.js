@@ -11,7 +11,7 @@ const aiConfig = {
     enabled: true,
     provider: 'deepseek',
     apiKey: process.env.DEEPSEEK_API_KEY || 'sk-d211ce1cfe974ac0b4082566fc5eb761', 
-    apiUrl: 'https://api.deepseek.ai/v1',
+    apiUrl: 'https://api.deepseek.com',
     model: 'deepseek-chat',
     
     // Response configuration

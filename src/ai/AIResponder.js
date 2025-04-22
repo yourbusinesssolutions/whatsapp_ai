@@ -320,7 +320,7 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
                 requestData,
                 {
                     headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
                         'Content-Type': 'application/json'
                     },
                     timeout: 30000 // 30 second timeout
