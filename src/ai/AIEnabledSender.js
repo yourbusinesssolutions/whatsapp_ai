@@ -21,7 +21,7 @@ class AIEnabledSender extends WhatsAppSender {
         // Initialize base WhatsApp sender
         super(sessionConfig, processedTracker, options);
         
-        this.log(`[AIEnabledSender] Initializing for session: ${sessionConfig.name}`);
+        this.logger.info(`[AIEnabledSender] Initializing for session: ${sessionConfig.name}`);
         
         // Initialize AI responder
         this.aiResponder = new AIResponder({
@@ -35,7 +35,7 @@ class AIEnabledSender extends WhatsAppSender {
             debug: options.debug || appConfig.debug
         });
         
-        this.log(`[AIEnabledSender] AI responder initialized with ${aiConfig.provider} provider`);
+        this.logger.info(`[AIEnabledSender] AI responder initialized with ${aiConfig.provider} provider`);
         
         // Set up debug logging
         this.aiDebugLogFile = path.join(
