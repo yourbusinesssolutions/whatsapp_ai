@@ -3,7 +3,7 @@
  * Handles generating AI responses with proper handling of stop requests
  */
 
-const axios = require('axios');
+const OpenAI = require('openai');
 const fs = require('fs');
 const path = require('path');
 const ConversationManager = require('./ConversationManager');
@@ -21,6 +21,12 @@ class AIResponder {
         this.maxTokens = options.maxTokens || aiConfig.maxResponseLength;
         this.responseDelay = options.responseDelay || aiConfig.responseDelay;
         this.languageConfig = options.languageConfig || aiConfig.responseLanguage;
+        
+        // Initialize OpenAI client
+        this.openai = new OpenAI({
+            baseURL: this.apiUrl,
+            apiKey: this.apiKey
+        });
         
         // Directories and logging
         this.logDirectory = options.logDirectory || path.join(__dirname, '../../logs');
@@ -278,7 +284,7 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
     }
 
     /**
-     * Generate AI response using DeepSeek API
+     * Generate AI response using OpenAI/DeepSeek API
      * @param {string} message - User message
      * @param {string} phoneNumber - User phone number 
      * @returns {Promise<string>} - AI generated response
@@ -301,8 +307,10 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
                 }
             ];
             
-            // Build request data
-            const requestData = {
+            this.logDebug(`Sending request to DeepSeek API with model: ${this.model}`);
+            
+            // Make API request using OpenAI client
+            const completion = await this.openai.chat.completions.create({
                 model: this.model,
                 messages: messages,
                 temperature: this.temperature,
@@ -310,43 +318,21 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
                 top_p: 0.9,
                 frequency_penalty: 0,
                 presence_penalty: 0
-            };
-            
-            this.logDebug(`Sending request to DeepSeek API with model: ${this.model}`);
-            
-            // Make API request
-            const completion = await axios.post(
-                this.apiUrl,
-                requestData,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 30000 // 30 second timeout
-                }
-            );
+            });
             
             this.logDebug(`DeepSeek API response received successfully`);
             
             // Extract response from API result
             let response = '';
-            if (completion.data && 
-                completion.data.choices && 
-                completion.data.choices.length > 0 && 
-                completion.data.choices[0].message &&
-                completion.data.choices[0].message.content) {
+            if (completion.choices && 
+                completion.choices.length > 0 && 
+                completion.choices[0].message &&
+                completion.choices[0].message.content) {
                 
-                response = completion.data.choices[0].message.content.trim();
-            } else if (completion.data && completion.data.output) {
-                // Alternative response format some APIs use
-                response = completion.data.output.trim();
-            } else if (completion.data && completion.data.response) {
-                // Another alternative format
-                response = completion.data.response.trim();
+                response = completion.choices[0].message.content.trim();
             } else {
                 // Unexpected response format
-                this.logDebug(`Unexpected API response format: ${JSON.stringify(completion.data)}`);
+                this.logDebug(`Unexpected API response format: ${JSON.stringify(completion)}`);
                 throw new Error("Unexpected API response format");
             }
             
@@ -473,5 +459,4 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
         }
     }
 }
-
 module.exports = AIResponder;

@@ -17,7 +17,7 @@ const aiConfig = {
     // Response configuration
     responseLanguage: "Dutch",
     maxResponseLength: 200,
-    temperature: 1.0,  // 0.0 = deterministic, 1.0 = creative
+    temperature: 1.3,  // 0.0 = deterministic, 1.0 = creative
     
     // Human-like response delay
     responseDelay: {
