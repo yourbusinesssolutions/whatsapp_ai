@@ -10,14 +10,14 @@ const aiConfig = {
     // Main AI settings
     enabled: true,
     provider: 'deepseek',
-    apiKey: process.env.DEEPSEEK_API_KEY || 'YOUR_DEEPSEEK_API_KEY', 
-    apiUrl: 'https://api.deepseek.ai/v1/chat/completions',
-    model: 'deepseek-coder',
+    apiKey: process.env.DEEPSEEK_API_KEY || 'sk-d211ce1cfe974ac0b4082566fc5eb761', 
+    apiUrl: 'https://api.deepseek.ai/v1',
+    model: 'deepseek-chat',
     
     // Response configuration
     responseLanguage: "Dutch",
     maxResponseLength: 200,
-    temperature: 0.3,  // 0.0 = deterministic, 1.0 = creative
+    temperature: 1.0,  // 0.0 = deterministic, 1.0 = creative
     
     // Human-like response delay
     responseDelay: {
