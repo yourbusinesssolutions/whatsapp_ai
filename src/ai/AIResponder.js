@@ -47,7 +47,9 @@ class AIResponder {
             monthlyCost: businessConfig.costStructure.monthlyFee,
             commission: businessConfig.costStructure.commission,
             requestsPerWeek: businessConfig.platformStats.requestsPerWeekPerProfessional,
-            maxVakmenPerRequest: businessConfig.platformStats.professionalsPerRequest
+            maxVakmenPerRequest: businessConfig.platformStats.professionalsPerRequest,
+            businessDetails: businessConfig.businessDetails,
+            coreValues: businessConfig.coreValues || []
         };
         
         // Sofia persona
@@ -56,6 +58,7 @@ class AIResponder {
             role: aiConfig.persona.role,
             tone: aiConfig.persona.tone,
             instructions: aiConfig.persona.instructions,
+            detailedInstructions: aiConfig.persona.detailedInstructions || "",
             opening: aiConfig.openingMessages
         };
         
@@ -64,6 +67,22 @@ class AIResponder {
             base: 150,  // Base characters per minute (slow typer)
             variance: 50 // Random variance
         };
+        
+        // Enhanced conversation handling
+        this.conversationTips = aiConfig.conversationHandlingTips || {};
+        this.enhancedResponses = aiConfig.enhancedResponses || {};
+        
+        // Dashboard and product knowledge
+        this.dashboardFunctionality = businessConfig.dashboardFunctionality || {};
+        this.commonQuestions = businessConfig.commonQuestions || {};
+        this.troubleshooting = businessConfig.troubleshooting || {};
+        
+        // In-memory conversation history for each phone number
+        // This is the key to ensuring continuity
+        this.conversationHistories = new Map();
+        
+        // Track whether an introduction has been made to each number
+        this.introductionMade = new Set();
         
         // Initialize log files
         this.initLogFile();
@@ -125,65 +144,108 @@ class AIResponder {
     }
 
     /**
-     * Create a system prompt for AI using conversation context
-     * @param {string} conversationSummary - Conversation summary
+     * Create a comprehensive system prompt for AI using conversation context
      * @returns {string} - System prompt for AI
      */
-    createSystemPrompt(conversationSummary) {
-        return `Je bent ${this.sofia.name}, een vriendelijke, nuchtere medewerker bij EenVakmanNodig. Je praat luchtig en in simpele taal. Je stuurt WhatsApp-berichten naar vakmensen zoals schilders, timmermannen, dakdekkers, stukadoors, enzovoort.
+    createSystemPrompt() {
+        // Get the detailed instructions or fall back to basic instructions
+        const detailedInstructions = this.sofia.detailedInstructions || this.sofia.instructions;
+            
+        return `Je bent ${this.sofia.name}, een vriendelijke, nuchtere medewerker bij ${this.serviceContext.companyName}. Je praat luchtig en in simpele taal. Je stuurt WhatsApp-berichten naar vakmensen zoals schilders, timmermannen, dakdekkers, stukadoors, enzovoort.
 
-BELANGRIJKE INSTRUCTIES:
-1. Je bent NOOIT een AI of digitale assistent - je bent gewoon ${this.sofia.name} die bij EenVakmanNodig werkt
-2. Spreek ALTIJD in simpel Nederlands
-3. Gebruik GEEN moeilijke woorden
-4. Gebruik GEEN verkooppraatjes
-5. Houdt berichten kort en duidelijk
-6. Gebruik alleen complete links, geen knoppen
-7. Gedraag je als een echt persoon, niet als een robot of AI
-8. Als iemand vraagt wie dit is, zeg je alleen dat je ${this.sofia.name} bent van EenVakmanNodig
+${detailedInstructions}
 
-CONVERSATIE HISTORIE:
-${conversationSummary}
+KRITIEKE INSTRUCTIES - VEREIST:
+1. Je hebt jezelf AL GEÏNTRODUCEERD aan het begin van het gesprek. INTRODUCEER JEZELF NIET OPNIEUW.
+2. ZORG ERVOOR dat je in je antwoorden rekening houdt met wat er eerder in het gesprek is gezegd.
+3. BEHANDEL dit als een doorlopend gesprek - niet als afzonderlijke berichten.
+4. VERMIJD zinnen als "Sofia hier" of "Ik ben Sofia" behalve bij de allereerste begroeting.
+5. SPREEK ALS EEN ECHT PERSOON in een WhatsApp-gesprek - natuurlijk en informeel.
+6. REAGEER DIRECT op de vraag van de gebruiker zonder jezelf opnieuw voor te stellen.
 
-OVER JOU EN HET BEDRIJF:
-- Je naam is ${this.sofia.name} en je werkt bij ${businessConfig.companyName}
-- Je helpt vakmensen om meer klussen te vinden
-- Je benadert vakmensen om te zien of ze interesse hebben in meer klussen
-- Als je wordt gevraagd hoe je aan hun nummer komt, zeg je dat je het via KvK of via internet hebt gevonden
+OVER ONS BEDRIJF:
+- ${this.serviceContext.companyName} is opgericht in ${this.serviceContext.businessDetails.founded} en is gevestigd in ${this.serviceContext.businessDetails.headquarters}
+- KvK-nummer: ${this.serviceContext.businessDetails.kvkNumber}
+- BTW-nummer: ${this.serviceContext.businessDetails.vatNumber}
+- Website: ${this.serviceContext.website}
+- Contact: ${this.serviceContext.contactEmail}, ${this.serviceContext.phoneNumber} (alleen WhatsApp)
+- Openingstijden: ${this.serviceContext.businessDetails.operatingHours}
 
 OVER ONS PLATFORM:
 - Wij ontvangen dagelijks ${businessConfig.platformStats.requestsPerDay} aanvragen van klanten die een vakman zoeken
 - Er liggen momenteel honderden klussen open waarvoor offertes nodig zijn
 - Vakmensen ontvangen ${businessConfig.platformStats.requestsPerWeekPerProfessional}
-- Elke klusaanvraag wordt naar ${businessConfig.platformStats.professionalsPerRequest}
+- Elke klusaanvraag wordt naar ${businessConfig.platformStats.professionalsPerRequest} vakmensen gestuurd
 
 HOE HET WERKT:
-1. Aanmelden: Via ${businessConfig.signupLink}
-2. Kosten: ${businessConfig.costStructure.monthlyFee}
-3. Je ontvangt contactgegevens van klanten die een klus hebben
-4. Je kunt direct bellen of een afspraak maken met de klant
-5. Je maakt je eigen offerte en stuurt deze naar de klant
-6. Als de klus doorgaat, betaal je ${businessConfig.costStructure.commission}
-7. Onze backoffice helpt je met professionele offertes of juridische hulp indien nodig
+${businessConfig.howItWorks.map((step, index) => `${index + 1}. ${step}`).join('\n')}
+
+KOSTEN VOOR VAKMENSEN:
+- Maandelijks: ${businessConfig.costStructure.monthlyFee}
+- Commissie: ${businessConfig.costStructure.commission} (minimaal ${businessConfig.costStructure.minimumCommission})
+- Factuurcyclus: ${businessConfig.costStructure.billingCycle}
+- Betalingsmethoden: ${businessConfig.costStructure.paymentMethods.join(', ')}
+- Betalingstermijn: ${businessConfig.costStructure.paymentDueDays} dagen
+
+VAKGEBIEDEN DIE WE ONDERSTEUNEN:
+- Bouw: timmermannen, schilders, loodgieters, elektriciens, stukadoors, dakdekkers, etc.
+- Schoonmaak: huishoudelijk, kantoor, industrieel, etc.
+- Makelaardij: verkoop, aankoop, taxatie, verhuur
+- Webdesign: website ontwikkeling, webshop, SEO
+- Marketing: SEO, social media, Google Ads, content
+- Boekhouding: ZZP, MKB, BTW-aangifte, jaarrekeningen
+
+VEELGESTELDE VRAGEN:
+- Kosten: €100 per maand en 2% commissie (min. €50) bij geslaagde klussen
+- Opzegtermijn: Je kunt op elk moment opzeggen met een maand opzegtermijn
+- Verplichtingen: Je bent niet verplicht om klussen aan te nemen
+- Werkgebied: Je kunt zelf aangeven in welke regio('s) je wilt werken
+- Aanvragen: Gemiddeld 10 aanvragen per week per vakman
 
 WANNEER BELLEN AANBIEDEN:
 Als de vakman twijfelt of zelf om een belafspraak vraagt, zeg dan: "Ik kan ook even met je bellen als je dat makkelijker vindt – laat maar weten."
 
-TOON: ${this.sofia.tone}
-
-BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifiek naar gevraagd wordt. Geen proefperiode aanbieden - dit bestaat niet.`;
+TOON: ${this.sofia.tone}`;
     }
 
     /**
-     * Get a profession-specific message
+     * Get a profession-specific message with enhanced detail
      * @param {string} profession - Professional category
      * @returns {string|null} - Profession-specific message or null
      */
     getProfessionSpecificMessage(profession) {
         if (!profession) return null;
         
+        // First try to get from the detailed professional messages
         const message = businessConfig.professionalMessages[profession.toLowerCase()];
-        return message || null;
+        
+        // If found, return it
+        if (message) return message;
+        
+        // Otherwise, check if there's a general category this profession belongs to
+        for (const [category, professions] of Object.entries(businessConfig.professionalCategories)) {
+            if (professions.includes(profession.toLowerCase())) {
+                // Return a generic message for this category
+                switch(category) {
+                    case "construction":
+                        return `We krijgen dagelijks veel aanvragen voor bouwprofessionals zoals ${profession}s.`;
+                    case "cleaning":
+                        return `We hebben regelmatig klanten die op zoek zijn naar schoonmaakdiensten.`;
+                    case "realEstate":
+                        return `Er is veel vraag naar makelaars en vastgoedprofessionals op ons platform.`;
+                    case "webDesign":
+                        return `We hebben regelmatig klanten die op zoek zijn naar webdesign en ontwikkeling.`;
+                    case "marketing":
+                        return `Er komen regelmatig aanvragen binnen voor marketingprofessionals.`;
+                    case "accounting":
+                        return `We hebben klanten die op zoek zijn naar boekhouders en financieel adviseurs.`;
+                    default:
+                        return null;
+                }
+            }
+        }
+        
+        return null;
     }
 
     /**
@@ -232,12 +294,7 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
         const state = this.conversationManager.getConversationState(phoneNumber);
         const history = this.conversationManager.getConversationHistory(phoneNumber);
         
-        // First message should be an opening
-        if (state.messageCount === 1 || state.messageCount === 0) {
-            return this.conversationManager.getRandomResponse(this.sofia.opening);
-        }
-        
-        // Check for specific responses based on trigger type
+        // These are the only triggers that should always get canned responses
         switch (triggerType) {
             case 'stopConversation':
                 return this.conversationManager.getRandomResponse(messageTemplates.responses.stopConversation);
@@ -245,79 +302,88 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
             case 'aggressive':
                 return this.conversationManager.getRandomResponse(messageTemplates.responses.aggressive);
                 
-            case 'interest':
-                // Add profession-specific info if known
-                const professionMsg = history.contactInfo.profession ? 
-                    this.getProfessionSpecificMessage(history.contactInfo.profession) : 
-                    "";
-                
-                // Get base interest response
-                const baseResponse = this.conversationManager.getRandomResponse(messageTemplates.responses.interest);
-                
-                // Insert profession message if available
-                if (professionMsg) {
-                    return baseResponse.replace("Wij krijgen dagelijks", `${professionMsg}\n\nWij krijgen dagelijks`);
-                }
-                return baseResponse;
-                
-            case 'costs':
-                return this.conversationManager.getRandomResponse(messageTemplates.responses.costs);
-                
-            case 'howItWorks':
-                return this.conversationManager.getRandomResponse(messageTemplates.responses.howItWorks);
-                
-            case 'callRequest':
-                return this.conversationManager.getRandomResponse(messageTemplates.responses.callRequest);
-                
-            case 'rejection':
-                return this.conversationManager.getRandomResponse(messageTemplates.responses.rejection);
-                
-            case 'identityQuestion':
-                return this.conversationManager.getRandomResponse(messageTemplates.responses.identityQuestion);
-                
-            case 'numberSource':
-                return this.conversationManager.getRandomResponse(messageTemplates.responses.numberSource);
-                
             default:
                 return null;
         }
     }
 
     /**
-     * Generate AI response using OpenAI/DeepSeek API
+     * Get or initialize conversation history for a phone number
+     * @param {string} phoneNumber - User phone number
+     * @returns {Array} - Conversation history messages array
+     */
+    getConversationHistory(phoneNumber) {
+        if (!this.conversationHistories.has(phoneNumber)) {
+            // Initialize with system message
+            this.conversationHistories.set(phoneNumber, [
+                { role: "system", content: this.createSystemPrompt() }
+            ]);
+        }
+        
+        return this.conversationHistories.get(phoneNumber);
+    }
+
+    /**
+     * Add a message to the conversation history
+     * @param {string} phoneNumber - User phone number
+     * @param {string} role - Message role (user/assistant)
+     * @param {string} content - Message content
+     */
+    addMessageToHistory(phoneNumber, role, content) {
+        const history = this.getConversationHistory(phoneNumber);
+        history.push({ role, content });
+        
+        // Keep history within manageable limits (system + 20 exchanges)
+        const maxHistoryLength = 41; // system message + 20 exchanges (20 user + 20 assistant)
+        if (history.length > maxHistoryLength) {
+            // Keep system message and trim the oldest messages
+            const systemMessage = history[0];
+            const trimmedHistory = history.slice(-(maxHistoryLength - 1));
+            this.conversationHistories.set(phoneNumber, [systemMessage, ...trimmedHistory]);
+        }
+    }
+
+    /**
+     * Generate AI response using OpenAI/DeepSeek API with full conversation history
      * @param {string} message - User message
      * @param {string} phoneNumber - User phone number 
      * @returns {Promise<string>} - AI generated response
      */
     async generateAIResponse(message, phoneNumber) {
         try {
-            // Get conversation summary
-            const conversationSummary = this.conversationManager.getConversationSummary(phoneNumber);
-            const systemPrompt = this.createSystemPrompt(conversationSummary);
+            // Get or initialize conversation history
+            const conversationHistory = this.getConversationHistory(phoneNumber);
             
-            // Prepare messages for DeepSeek API
-            const messages = [
-                {
-                    role: "system",
-                    content: systemPrompt
-                },
-                {
-                    role: "user",
-                    content: message
-                }
-            ];
+            // Add user message to history
+            this.addMessageToHistory(phoneNumber, "user", message);
             
-            this.logDebug(`Sending request to DeepSeek API with model: ${this.model}`);
+            // Check if this is the very first message and introduction hasn't been made
+            if (!this.introductionMade.has(phoneNumber)) {
+                // Mark that introduction has been made to prevent future reintroductions
+                this.introductionMade.add(phoneNumber);
+                
+                // For the very first message, use a canned opening
+                const openingMessage = this.conversationManager.getRandomResponse(this.sofia.opening);
+                
+                // Add this to the conversation history
+                this.addMessageToHistory(phoneNumber, "assistant", openingMessage);
+                
+                // Return the opening
+                return openingMessage;
+            }
+            
+            // Log history size for debugging
+            this.logDebug(`Sending request to DeepSeek API with ${conversationHistory.length} message history`);
             
             // Make API request using OpenAI client
             const completion = await this.openai.chat.completions.create({
                 model: this.model,
-                messages: messages,
+                messages: conversationHistory,
                 temperature: this.temperature,
                 max_tokens: this.maxTokens,
                 top_p: 0.9,
-                frequency_penalty: 0,
-                presence_penalty: 0
+                frequency_penalty: 0.3, // Increased to reduce repetitive language
+                presence_penalty: 0.3   // Increased to reduce repetition
             });
             
             this.logDebug(`DeepSeek API response received successfully`);
@@ -330,6 +396,10 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
                 completion.choices[0].message.content) {
                 
                 response = completion.choices[0].message.content.trim();
+                
+                // Add assistant response to conversation history
+                this.addMessageToHistory(phoneNumber, "assistant", response);
+                
             } else {
                 // Unexpected response format
                 this.logDebug(`Unexpected API response format: ${JSON.stringify(completion)}`);
@@ -394,6 +464,10 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
                         { final: true, reason: triggerType }
                     );
                     
+                    // Add to message history for AI context
+                    this.addMessageToHistory(phoneNumber, "user", message);
+                    this.addMessageToHistory(phoneNumber, "assistant", finalResponse);
+                    
                     return finalResponse;
                 }
             }
@@ -407,7 +481,7 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
             const triggerType = this.conversationManager.detectTriggerType(message);
             this.logDebug(`Detected trigger type: ${triggerType}`);
             
-            // Try to get a canned response first
+            // Only stop/aggressive triggers get canned responses now
             let response = this.getCannedResponse(triggerType, phoneNumber);
             
             // If no canned response, generate with AI
@@ -416,16 +490,20 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
                 const typingDelay = this.calculateTypingDelay(message);
                 await new Promise(resolve => setTimeout(resolve, typingDelay));
                 
-                // Generate AI response
+                // Generate AI response with full conversation history
                 response = await this.generateAIResponse(message, phoneNumber);
             } else {
                 // Even for canned responses, use a typing delay based on the length
                 const typingDelay = this.calculateTypingDelay(response);
                 this.logDebug(`Simulating typing delay for canned response: ${typingDelay}ms`);
                 await new Promise(resolve => setTimeout(resolve, typingDelay));
+                
+                // For canned responses, still add them to the conversation history
+                this.addMessageToHistory(phoneNumber, "user", message);
+                this.addMessageToHistory(phoneNumber, "assistant", response);
             }
             
-            // Update conversation history
+            // Update conversation history in database
             this.conversationManager.updateConversationHistory(phoneNumber, message, response);
             
             // Log the response
@@ -451,6 +529,10 @@ BELANGRIJK: Stel jezelf maar één keer voor (aan het begin), tenzij er specifie
                     fallbackResponse,
                     { error: true, errorMessage: error.message }
                 );
+                
+                // Add to message history
+                this.addMessageToHistory(phoneNumber, "user", message);
+                this.addMessageToHistory(phoneNumber, "assistant", fallbackResponse);
                 
                 return fallbackResponse;
             }

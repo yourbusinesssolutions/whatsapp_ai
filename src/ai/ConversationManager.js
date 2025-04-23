@@ -95,8 +95,16 @@ class ConversationManager {
                     });
                 }
                 
+                // Load conversation states if available
+                if (historyData.conversationStates) {
+                    Object.entries(historyData.conversationStates).forEach(([phoneNumber, state]) => {
+                        this.conversationState.set(phoneNumber, state);
+                    });
+                }
+                
                 this.logDebug(`Loaded conversation history for ${this.conversationHistory.size} contacts`);
                 this.logDebug(`Loaded ${this.blockedNumbers.size} blocked numbers`);
+                this.logDebug(`Loaded ${this.conversationState.size} conversation states`);
             }
         } catch (error) {
             console.error('Error loading conversation history:', error.message);
@@ -113,12 +121,17 @@ class ConversationManager {
             // Prepare data for storage
             const historyData = {
                 conversations: {},
-                blockedNumbers: Array.from(this.blockedNumbers)
+                blockedNumbers: Array.from(this.blockedNumbers),
+                conversationStates: {}
             };
             
-            // Convert Map to Object for JSON serialization
+            // Convert Maps to Objects for JSON serialization
             this.conversationHistory.forEach((history, phoneNumber) => {
                 historyData.conversations[phoneNumber] = history;
+            });
+            
+            this.conversationState.forEach((state, phoneNumber) => {
+                historyData.conversationStates[phoneNumber] = state;
             });
             
             // Write to file
@@ -158,6 +171,15 @@ class ConversationManager {
             `Number blocked. Reason: ${reason}`,
             { blockReason: reason, blockedAt: new Date().toISOString() }
         );
+        
+        // Update conversation state to mark as ended
+        const state = this.getConversationState(phoneNumber);
+        this.updateConversationState(phoneNumber, {
+            ...state,
+            endConversation: true,
+            blockedReason: reason,
+            blockedAt: new Date().toISOString()
+        });
         
         this.logDebug(`Blocked number ${phoneNumber}. Reason: ${reason}`);
         this.saveConversationHistory();
@@ -212,6 +234,7 @@ class ConversationManager {
      * Update the conversation state
      * @param {string} phoneNumber - User phone number 
      * @param {Object} stateUpdate - State updates to apply
+     * @returns {Object} - Updated state
      */
     updateConversationState(phoneNumber, stateUpdate) {
         const currentState = this.conversationState.get(phoneNumber) || {
@@ -219,7 +242,8 @@ class ConversationManager {
             endConversation: false,
             lastMessageTimestamp: null,
             topics: [],
-            profession: null
+            profession: null,
+            conversationStarted: new Date().toISOString()
         };
         
         // Update state with new data
@@ -230,6 +254,12 @@ class ConversationManager {
         };
         
         this.conversationState.set(phoneNumber, updatedState);
+        
+        // Save conversation state periodically
+        if (Math.random() < 0.1) { // ~10% chance of saving 
+            this.saveConversationHistory();
+        }
+        
         return updatedState;
     }
     
@@ -244,7 +274,8 @@ class ConversationManager {
             endConversation: false,
             lastMessageTimestamp: null,
             topics: [],
-            profession: null
+            profession: null,
+            conversationStarted: new Date().toISOString()
         };
     }
     
@@ -422,6 +453,16 @@ ${recentContext}`;
         if (triggerPatterns.identityQuestion.test(normalizedMessage)) return 'identityQuestion';
         if (triggerPatterns.numberSource.test(normalizedMessage)) return 'numberSource';
         if (triggerPatterns.profession.test(normalizedMessage)) return 'profession';
+        if (triggerPatterns.companyInfo.test(normalizedMessage)) return 'companyInfo';
+        if (triggerPatterns.dashboardHelp.test(normalizedMessage)) return 'dashboardHelp';
+        if (triggerPatterns.techSupport.test(normalizedMessage)) return 'techSupport';
+        if (triggerPatterns.competitorMention.test(normalizedMessage)) return 'competitorMention';
+        if (triggerPatterns.thinkingAboutIt.test(normalizedMessage)) return 'thinkingAboutIt';
+        if (triggerPatterns.websiteQuestion.test(normalizedMessage)) return 'websiteQuestion';
+        if (triggerPatterns.paymentQuestion.test(normalizedMessage)) return 'paymentQuestion';
+        if (triggerPatterns.timeQuestion.test(normalizedMessage)) return 'timeQuestion';
+        if (triggerPatterns.serviceAreaQuestion.test(normalizedMessage)) return 'serviceAreaQuestion';
+        if (triggerPatterns.statsQuestion.test(normalizedMessage)) return 'statsQuestion';
         
         // Default case - general message
         return 'general';
@@ -437,6 +478,35 @@ ${recentContext}`;
             return null;
         }
         return responseOptions[Math.floor(Math.random() * responseOptions.length)];
+    }
+    
+    /**
+     * Check if we should skip the AI for this message and use a canned response
+     * @param {string} message - User message 
+     * @param {string} phoneNumber - User phone number
+     * @returns {boolean} - True if should skip AI
+     */
+    shouldSkipAI(message, phoneNumber) {
+        const state = this.getConversationState(phoneNumber);
+        
+        // Skip AI for first message, always use opening response
+        if (state.messageCount <= 1) {
+            return true;
+        }
+        
+        // Skip AI for stop conversation messages
+        if (triggerPatterns.stopConversation.test(message) || 
+            triggerPatterns.aggressive.test(message)) {
+            return true;
+        }
+        
+        // Skip AI for very short acknowledgments
+        if (triggerPatterns.shortAcknowledgment.test(message) && message.length < 5) {
+            return true;
+        }
+        
+        // For all other messages, use AI
+        return false;
     }
 }
 
